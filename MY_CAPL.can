@@ -1,0 +1,118 @@
+/*@!Encoding:1252*/
+includes
+{
+  // #include "D:\demo-config\03.12.2020-Var1\ECGW\CAPL\Ferrai_AutoPilot_Demo.can"
+  // use this include command just like in C in -> <stdio.h>
+}
+
+
+//declare all of our variables
+variables
+{
+//setting messages:
+  message * TP_Console;                          // initial a generic msg with no velue
+  message * TP_Dashboard;
+  message * CruiseSpeed;
+  message * CruiseControl;
+  message * TyrePressure;
+  message * FrontDoor;
+  message * msg;
+  
+//setting timers on CAPL:
+  msTimer t_01;                                  // timer in milisecond    **MAX time for this variable is about 600 hours**
+  const int Timer_01_Val = 2000;                 // time in ms for cycle
+
+//setting other variables:
+  int MAX_FD_SIZE = 64;
+  int MAX_CAN_SIZE = 8;
+  int sec = 0;
+  int milisec = 0;
+  int counter_01 = 1;
+  int i =0;
+  int k = 0;
+  int strt = 0;
+  int fin = 0;
+}
+
+void initiall(int i)
+{
+  i = 0;
+  TP_Console.id = 0x604;
+  TP_Dashboard.id = 0x605;
+  CruiseSpeed.id = 0x010;
+  CruiseControl.id = 0x009;
+  TyrePressure.id = 0x003;
+  FrontDoor.id = 0x002;
+  
+  TP_Console.dlc = MAX_FD_SIZE;                              
+  TP_Dashboard.dlc = MAX_FD_SIZE;
+  CruiseSpeed.dlc = MAX_FD_SIZE;
+  CruiseControl.dlc = MAX_FD_SIZE;
+  TyrePressure.dlc = MAX_FD_SIZE;
+  FrontDoor.dlc = MAX_FD_SIZE;
+  
+  for (i; i <= 63; i++)
+  {
+    TP_Console.byte(i) = 0x00;
+    TP_Dashboard.byte(i) = 0x00;
+    CruiseSpeed.byte(i) = 0x00;
+    CruiseControl.byte(i) = 0x00;
+    TyrePressure.byte(i) = 0x00;
+    FrontDoor.byte(i) = 0x00;
+  }
+  i=0;
+}
+
+
+on start
+{
+  setTimerCyclic(t_01, Timer_01_Val);          //now every "Timer_01_Val" ms we send "t_01" message.
+  write("you've started the simulation!");     //the CAPL equivilent to printf(). the thext in the(" ") will be printed onto the writ window on the CANoe
+  initiall(i);
+}
+
+on timer t_01
+{
+ milisec++;
+  k = milisec/256;
+  TP_Console.byte(k) ++;
+  TP_Dashboard.byte(k) ++;
+  CruiseSpeed.byte(k) ++;
+  CruiseControl.byte(k) ++;
+  TyrePressure.byte(k) ++;
+  FrontDoor.byte(k) ++;
+  
+  output(TP_Console);
+  output(TP_Dashboard);
+  output(CruiseSpeed);
+  output(CruiseControl);
+  output(TyrePressure);
+  output(FrontDoor);
+  
+   if ((milisec%100)==0)
+  {
+     write("iv'e sent you some %d message packets, also k is now %d ",milisec, k);
+  }
+  
+ /*TP_Console.id = 0x604;                            //setting the message ID to be 0x1F3 (Hexa)
+ TP_Console.dlc = 64;                               //setting the message size to be 8
+ TP_Console.byte(0) = 0xAA;
+  */
+ output(TP_Console);                               //the output() function sends the message given as argument
+}
+
+
+
+//Basic latency writing function 
+on message CAN_FD1.TP_Console
+{
+  strt = this.time;
+}
+
+on message CAN_FD2.TP_Console
+{
+  fin = this.time - strt;
+  write("delay is %d ",fin);
+}
+
+
