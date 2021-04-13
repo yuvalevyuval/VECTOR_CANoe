@@ -1,0 +1,84 @@
+/*@!Encoding:1252*/
+
+variables
+{
+/*
+  #define TOP_LATENCY 900
+  #define ECU_NUM 7
+  #define FACTOR  1000
+*/
+  
+  message msg_15 msgObj_1;          //msg_15 is the name of the frame given in th ARXML database for the source ECU.
+  message CAN_FD_1.msg_15 msgObj_2; //CAN_FD_1 is the name of the network of the source ECU.
+  int64 endTimeTxFrame;             //timestamp of the end of Tx
+  int64 startTimeRxFrame;           //timestamp of the start of Rx
+  int64 curr;
+  int64 tot_frames = 0;             //number of total frames sent
+  int64 hickups = 0;                //number of total frames that take more then 0.9 milisec
+ 
+  int64 tot_time = 0;
+  int64 max=0;
+  int64 min= 1000000000;
+}
+
+
+on start{
+ write ("started CAPL test block" ); 
+}
+
+
+on message *
+{
+  
+  if(this.id==msgObj_1.id && this.can == 4)                          //if the frame went through port 4 (CAN_FD_1) 
+  {
+    endTimeTxFrame = this.SOF + this.frameLen;                       //calc the timestamp and subtruct the frame length
+    //write ("__Tx__");
+    //write("CAN1 StartOfFrame= %I64d",this.SOF);
+    //write("CAN1 FrameLength= %ld",this.frameLen);
+    //write("CAN1 endTimeTxFrame is %I64d",endTimeTxFrame);
+  }
+  
+  if(this.id==msgObj_2.id && this.can == 5 && endTimeTxFrame != 0)  //if the frame is VALID went through port 4 (CAN_FD_2)
+  {
+    startTimeRxFrame = this.SOF;
+    curr = ((startTimeRxFrame - endTimeTxFrame)/1000);
+    //write("CAN_FD startTimeRxFrame is %lld",startTimeRxFrame);
+    //write ("__Rx__");
+    tot_frames ++;
+    tot_time += curr;
+    
+    write("%d", curr);           //print latency for every frame
+    
+    IF (curr>900)                //section for printing for higher then desired times 
+    {
+      hickups ++;                                                    //counter for the hickups
+      //write("%d", curr);       //only print the hickups 
+    }
+    if(min>curr)
+    {
+      min =curr;
+    } 
+    
+    if(max<curr)
+    {
+      max =curr;
+    } 
+    
+    endTimeTxFrame = 0 ;   //zero parameters for next frames
+    startTimeRxFrame = 0 ; //zero parameters for next frames
+  }
+}
+
+ on stopMeasurement
+{       //final data on the entire simulation
+  write ("\n");
+  write ("MIN latency is %d us", min);
+  write ("MAX latency is %d us", max);
+  write ("AVERAGE latency is %d us",tot_time/tot_frames);
+  write ("\n");
+  write ("had %d hickups (over 900 us latency) ", hickups);
+  write ("of total %d frames", tot_frames);
+  
+}
+ 
