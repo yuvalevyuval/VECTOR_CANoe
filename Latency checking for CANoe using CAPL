@@ -2,83 +2,94 @@
 
 variables
 {
-/*
-  #define TOP_LATENCY 900
-  #define ECU_NUM 7
-  #define FACTOR  1000
-*/
-  
-  message msg_15 msgObj_1;          //msg_15 is the name of the frame given in th ARXML database for the source ECU.
-  message CAN_FD_1.msg_15 msgObj_2; //CAN_FD_1 is the name of the network of the source ECU.
-  int64 endTimeTxFrame;             //timestamp of the end of Tx
-  int64 startTimeRxFrame;           //timestamp of the start of Rx
-  int64 curr;
-  int64 tot_frames = 0;             //number of total frames sent
-  int64 hickups = 0;                //number of total frames that take more then 0.9 milisec
- 
-  int64 tot_time = 0;
-  int64 max=0;
-  int64 min= 1000000000;
-}
+// switch between frame id's by swapping msg_name(lines 6-7) and port numbers(DST_PORT, SRC_PORT, ECU_ID) accourdin to the configuration requirments
 
+  message msg_0x71 msgObj_1;          //msg_15 is the name of the frame given in th ARXML database for the source ECU.
+  message CAN_FD_1.msg_0x71 msgObj_2; //CAN_FD_1 is the name of the network of the source ECU.
+  dword glbHandle = 0;
+  char res [64];
+  int DST_PORT = 5;
+  int SRC_PORT= 4;
+  int ECU_ID = 7;
+  
+  int64 endTimeTxFrame;               //timestamp of the end of Tx
+  int64 startTimeRxFrame;             //timestamp of the start of Rx
+  int64 endTimeRxFrame;               //timestamp of the end of Rx
+  int64 curr;                         //current frame latency
+  float tot_frames = 0;               //number of total frames sent
+  int64 too_long = 900;               //if we wish to have an upper limit for latency
+  float hickups = 0;                  //number of total frames that take more then 0.9 milisec
+  float hickup_precent = 0; 
+  int64 tot_time = 0;
+  
+  int64 avg = 0;
+  int64 max = 0;                       
+  int64 min = 2147483647;             //largest int size, approx 120 hours, cuz there is no infinty in CAPL
+  int64 msg_rx = 0;                   //counter for recived frames
+  int64 msg_tx = 0;                   //counter for sent frames
+  int64 test_duration = 1*10*100000;  //duration for each simulation run - (100000 = 1 second)
+  int ECU_activation_flag = 0;         
+}
 
 on start{
- write ("started CAPL test block" ); 
+ write ("started CAPL test block for ECU%d", ECU_ID ); 
 }
 
-
-on message *
-{
+on message * {                                   //we enter this code block for evey frame that is being sent in any frame
+  if (timeNow() > test_duration)                 //use to stop simulation after time exceeds the duration
+        stop();
   
-  if(this.id==msgObj_1.id && this.can == 4)                          //if the frame went through port 4 (CAN_FD_1) 
-  {
+  if(this.id==msgObj_1.id && this.can == SRC_PORT && timeNow() < test_duration){ //if the frame went through port 4 (CAN_FD_1) in the time restrictions
     endTimeTxFrame = this.SOF + this.frameLen;                       //calc the timestamp and subtruct the frame length
-    //write ("__Tx__");
-    //write("CAN1 StartOfFrame= %I64d",this.SOF);
-    //write("CAN1 FrameLength= %ld",this.frameLen);
-    //write("CAN1 endTimeTxFrame is %I64d",endTimeTxFrame);
-  }
+    ECU_activation_flag = 1;
+    //write("........");
+    msg_tx ++;
+  } 
   
-  if(this.id==msgObj_2.id && this.can == 5 && endTimeTxFrame != 0)  //if the frame is VALID went through port 4 (CAN_FD_2)
-  {
+  if(this.id==msgObj_2.id && this.can == DST_PORT && endTimeTxFrame != 0)  {  //if the frame is VALID went through port 4 (CAN_FD_2)
     startTimeRxFrame = this.SOF;
     curr = ((startTimeRxFrame - endTimeTxFrame)/1000);
-    //write("CAN_FD startTimeRxFrame is %lld",startTimeRxFrame);
-    //write ("__Rx__");
+    msg_rx ++;
     tot_frames ++;
-    tot_time += curr;
-    
-    write("%d", curr);           //print latency for every frame
-    
-    IF (curr>900)                //section for printing for higher then desired times 
-    {
-      hickups ++;                                                    //counter for the hickups
+    tot_time += curr; 
+    //write("@@@@@@@@");
+    //write("%d", curr);         //print latency for every frame
+  
+    if (curr>too_long){           //section for printing for higher then desired times 
+      hickups ++;                //counter for the hickups
       //write("%d", curr);       //only print the hickups 
     }
-    if(min>curr)
-    {
+    
+    if(min>curr)                 //update MIN latency
       min =curr;
-    } 
     
-    if(max<curr)
-    {
+    if(max<curr)                 //update MAX latency
       max =curr;
-    } 
     
-    endTimeTxFrame = 0 ;   //zero parameters for next frames
-    startTimeRxFrame = 0 ; //zero parameters for next frames
+    endTimeTxFrame = 0 ;         //zero parameters for next frames
+    startTimeRxFrame = 0 ;       //zero parameters for next frames
   }
 }
 
- on stopMeasurement
-{       //final data on the entire simulation
-  write ("\n");
-  write ("MIN latency is %d us", min);
-  write ("MAX latency is %d us", max);
-  write ("AVERAGE latency is %d us",tot_time/tot_frames);
-  write ("\n");
-  write ("had %d hickups (over 900 us latency) ", hickups);
-  write ("of total %d frames", tot_frames);
-  
+ on stopMeasurement {                                   //final data on the entire simulation
+  //strncpy(res, "well\n", 5);                          //write in res, 5 chars
+  glbHandle = OpenFileWrite ("Raw_Test_Data.csv",2);    //2 mode means appends data at end of the file, so eace lien contains resuolt of a single test
+  filePutString (res,elcount(res),glbHandle );
+  fileClose (glbHandle);
+
+  if (ECU_activation_flag) {
+    if(min ==2147483647)                                 //set min to -1 if no frames sent
+       min = -1;
+    avg=tot_time/tot_frames;
+    hickup_precent = hickups*100/tot_frames;
+    write ("\nMIN latency is %d us", min);
+    write ("MAX latency is %d us", max);
+    write ("AVERAGE latency is %d us",avg);
+    write ("total losses %d frames\n",msg_tx-msg_rx);
+    write ("had %f hickups", hickups);
+    write ("hickups precantage %f %",hickup_precent);
+    write ("of total %f frames\n", tot_frames);
+    write ("simulation ran for %d seconds", test_duration/100000);
+  }
 }
  
