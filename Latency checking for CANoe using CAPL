@@ -1,16 +1,28 @@
 /*@!Encoding:1252*/
 
 variables
-{
-// switch between frame id's by swapping msg_name(lines 6-7) and port numbers(DST_PORT, SRC_PORT, ECU_ID) accourdin to the configuration requirments
-
-  message msg_0x71 msgObj_1;          //msg_15 is the name of the frame given in th ARXML database for the source ECU.
-  message CAN_FD_1.msg_0x71 msgObj_2; //CAN_FD_1 is the name of the network of the source ECU.
+{ // switch between frame id's by swapping msg_name(lines 6-7) and port numbers(DST_PORT, SRC_PORT, ECU_ID) accourdin to the configuration requirments
   dword glbHandle = 0;
-  char res [64];
+  message msg_0x71 msgObj_1;          //msg_15 is the name of the frame given in th ARXML database for the source ECU
+  message CAN_FD_1.msg_0x71 msgObj_2; //CAN_FD_1 is the name of the network of the source ECU
   int DST_PORT = 5;
   int SRC_PORT= 4;
   int ECU_ID = 7;
+  int64 ieration = 1;
+  msTimer t_01;                       // timer in milisecond    **MAX time for this variable is about 600 hours**
+  const int Timer_01_Val = 1000;        // time in ms for cycle
+  
+  
+  char res [128];                      //the string for a single test log
+  char C_iteration[15];
+  char C_tot_time[15];
+  char C_min[15];
+  char C_max[15];
+  char C_avg[15];
+  char C_hickups[15]; 
+  char C_tot_frames[15];
+  char C_hickup_precent[15];
+  char C_losses[15];
   
   int64 endTimeTxFrame;               //timestamp of the end of Tx
   int64 startTimeRxFrame;             //timestamp of the start of Rx
@@ -27,12 +39,35 @@ variables
   int64 min = 2147483647;             //largest int size, approx 120 hours, cuz there is no infinty in CAPL
   int64 msg_rx = 0;                   //counter for recived frames
   int64 msg_tx = 0;                   //counter for sent frames
-  int64 test_duration = 1*10*100000;  //duration for each simulation run - (100000 = 1 second)
-  int ECU_activation_flag = 0;         
+  int64 test_duration = 1*5*100000+1000;  //duration for each simulation run - (100000 = 1 second). we add another 10 ms for lats frames to arrive at Rx port
+  int ECU_activation_flag = 0;        //we use this flag to aviog printing and file handling.
+  int64 losses = 0;
 }
 
+
+void write_to_file(){
+  strncpy(res, "test\n", 15); 
+  //  C_iteration  C_tot_time  C_min  C_max   C_avg   C_hickups    C_tot_frames   C_hickup_precen    C_losses
+
+  glbHandle = OpenFileWrite ("Data.txt",2);          //2 mode appends data at end of the file 
+  filePutString (res,elcount(res),glbHandle );
+  fileClose (glbHandle);
+}
+
+void write_to_canoe(){
+    write ("\nMIN latency is %d us", min);
+    write ("MAX latency is %d us", max);
+    write ("AVERAGE latency is %d us",avg);
+    write ("total losses %d frames\n",losses);
+    write ("had %f hickups", hickups);
+    write ("hickups precantage %f %",hickup_precent);
+    write ("of total %f frames\n", tot_frames);
+    write ("simulation ran for %d seconds", test_duration/100000);  //normalize the duration to show time in seconds
+    }
+
 on start{
- write ("started CAPL test block for ECU%d", ECU_ID ); 
+ write ("started CAPL test block for ECU%d", ECU_ID );
+ setTimerCyclic(t_01, Timer_01_Val);
 }
 
 on message * {                                   //we enter this code block for evey frame that is being sent in any frame
@@ -42,7 +77,6 @@ on message * {                                   //we enter this code block for 
   if(this.id==msgObj_1.id && this.can == SRC_PORT && timeNow() < test_duration){ //if the frame went through port 4 (CAN_FD_1) in the time restrictions
     endTimeTxFrame = this.SOF + this.frameLen;                       //calc the timestamp and subtruct the frame length
     ECU_activation_flag = 1;
-    //write("........");
     msg_tx ++;
   } 
   
@@ -52,10 +86,9 @@ on message * {                                   //we enter this code block for 
     msg_rx ++;
     tot_frames ++;
     tot_time += curr; 
-    //write("@@@@@@@@");
     //write("%d", curr);         //print latency for every frame
   
-    if (curr>too_long){           //section for printing for higher then desired times 
+    if (curr>too_long){          //section for printing for higher then desired times 
       hickups ++;                //counter for the hickups
       //write("%d", curr);       //only print the hickups 
     }
@@ -70,26 +103,21 @@ on message * {                                   //we enter this code block for 
     startTimeRxFrame = 0 ;       //zero parameters for next frames
   }
 }
+on timer t_01
+{
+   output(msgObj_1);
+}
 
- on stopMeasurement {                                   //final data on the entire simulation
-  //strncpy(res, "well\n", 5);                          //write in res, 5 chars
-  glbHandle = OpenFileWrite ("Raw_Test_Data.csv",2);    //2 mode means appends data at end of the file, so eace lien contains resuolt of a single test
-  filePutString (res,elcount(res),glbHandle );
-  fileClose (glbHandle);
-
-  if (ECU_activation_flag) {
-    if(min ==2147483647)                                 //set min to -1 if no frames sent
-       min = -1;
-    avg=tot_time/tot_frames;
-    hickup_precent = hickups*100/tot_frames;
-    write ("\nMIN latency is %d us", min);
-    write ("MAX latency is %d us", max);
-    write ("AVERAGE latency is %d us",avg);
-    write ("total losses %d frames\n",msg_tx-msg_rx);
-    write ("had %f hickups", hickups);
-    write ("hickups precantage %f %",hickup_precent);
-    write ("of total %f frames\n", tot_frames);
-    write ("simulation ran for %d seconds", test_duration/100000);
-  }
+ on stopMeasurement {                                //final data on the entire simulation
+    if (ECU_activation_flag) {      
+      avg=tot_time/tot_frames;
+      losses= msg_tx-msg_rx;
+      hickup_precent = hickups*100/tot_frames;
+      if(min == 2147483647)                             //set min to -1 if no frames sent
+        min = -1;
+      
+      write_to_canoe();
+      write_to_file();
+    }
 }
  
