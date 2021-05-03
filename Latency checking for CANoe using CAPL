@@ -10,20 +10,8 @@ variables
   int ECU_ID = 7;
   int64 ieration = 1;
   msTimer t_01;                       // timer in milisecond    **MAX time for this variable is about 600 hours**
-  const int Timer_01_Val = 1000;        // time in ms for cycle
-  
-  
-  char res [128];                      //the string for a single test log
-  char C_iteration[15];
-  char C_tot_time[15];
-  char C_min[15];
-  char C_max[15];
-  char C_avg[15];
-  char C_hickups[15]; 
-  char C_tot_frames[15];
-  char C_hickup_precent[15];
-  char C_losses[15];
-  
+  const int Timer_01_Val = 20;        // time in ms for cycle
+   
   int64 endTimeTxFrame;               //timestamp of the end of Tx
   int64 startTimeRxFrame;             //timestamp of the start of Rx
   int64 endTimeRxFrame;               //timestamp of the end of Rx
@@ -36,25 +24,39 @@ variables
   
   int64 avg = 0;
   int64 max = 0;                       
-  int64 min = 2147483647;             //largest int size, approx 120 hours, cuz there is no infinty in CAPL
+  int64 min = 2147483647;             //largest int size, approx 5 hours, cuz there is no infinty in CAPL
   int64 msg_rx = 0;                   //counter for recived frames
   int64 msg_tx = 0;                   //counter for sent frames
-  int64 test_duration = 1*5*100000+1000;  //duration for each simulation run - (100000 = 1 second). we add another 10 ms for lats frames to arrive at Rx port
+  int64 test_duration = 7*60*100000+1000;  //duration for each simulation run - (100000 = 1 second). we add another 10 ms for lats frames to arrive at Rx port
   int ECU_activation_flag = 0;        //we use this flag to aviog printing and file handling.
   int64 losses = 0;
 }
 
-
-void write_to_file(){
+/*void write_to_file(){
   strncpy(res, "test\n", 15); 
   //  C_iteration  C_tot_time  C_min  C_max   C_avg   C_hickups    C_tot_frames   C_hickup_precen    C_losses
 
   glbHandle = OpenFileWrite ("Data.txt",2);          //2 mode appends data at end of the file 
   filePutString (res,elcount(res),glbHandle );
   fileClose (glbHandle);
+}*/
+
+void write_log_for_file()
+{
+  writeProfileFloat ("message_ID_0x71_results", "iteration           =",1 , "Test.txt");
+  writeProfileFloat ("message_ID_0x71_results", "test duration (sec) =",test_duration/100000 , "Test.txt");
+  writeProfileFloat ("message_ID_0x71_results", "min latency time    =",min , "Test.txt");
+  writeProfileFloat ("message_ID_0x71_results", "max latency time    =",max , "Test.txt");
+  writeProfileFloat ("message_ID_0x71_results", "avg latency time    =",avg , "Test.txt");
+  writeProfileFloat ("message_ID_0x71_results", "number of hickups   =",hickups , "Test.txt");
+  writeProfileFloat ("message_ID_0x71_results", "hickups precentage  =",hickup_precent , "Test.txt");
+  writeProfileFloat ("message_ID_0x71_results", "total frames sent   =",tot_frames , "Test.txt");
+  writeProfileFloat ("message_ID_0x71_results", "losses              =",losses , "Test.txt");
+  //writeProfileString ("message_ID_0x71_results","\n","  ","Test.txt");
+  filePutString ("\n\n", 5,glbHandle);
 }
 
-void write_to_canoe(){
+void write_log_to_canoe(){
     write ("\nMIN latency is %d us", min);
     write ("MAX latency is %d us", max);
     write ("AVERAGE latency is %d us",avg);
@@ -103,9 +105,15 @@ on message * {                                   //we enter this code block for 
     startTimeRxFrame = 0 ;       //zero parameters for next frames
   }
 }
+
 on timer t_01
 {
    output(msgObj_1);
+}
+
+on preStop
+{
+  write("finishing simulation");
 }
 
  on stopMeasurement {                                //final data on the entire simulation
@@ -116,8 +124,9 @@ on timer t_01
       if(min == 2147483647)                             //set min to -1 if no frames sent
         min = -1;
       
-      write_to_canoe();
-      write_to_file();
+      write_log_to_canoe();
+      write_log_for_file();
+      //write_to_file();
     }
 }
  
